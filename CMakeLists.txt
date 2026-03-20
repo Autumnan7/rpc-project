@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(minico_rpc LANGUAGES C CXX)
+project(rpc-project LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,3 +22,4 @@ else()
 endif()
 
 add_subdirectory(src)
+add_subdirectory(examples)
