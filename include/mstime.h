@@ -32,7 +32,7 @@ namespace minico
 
         static void toLocalTime(time_t second, long timezone, struct tm *tm_time);
 
-        struct timespec timeIntervalFromNow();
+        struct timespec timeIntervalFromNow(); // 计算当前时间与对象时间的差值，返回一个 timespec 结构体
 
         int64_t getTimeVal() { return _timeVal; } // 负责读取已有对象的时间值
 
@@ -40,7 +40,7 @@ namespace minico
         int64_t _timeVal; // 以毫秒为单位的时间值
     };
 
-    // left hand sied
+    // lhs：left hand side
     inline bool operator<(Time lhs, Time rhs)
     {
         return lhs.getTimeVal() < rhs.getTimeVal();
