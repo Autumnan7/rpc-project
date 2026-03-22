@@ -18,7 +18,6 @@ time_t Time::nowSec()
     return tv.tv_sec;
 }
 
-// 计算当前时间与对象时间的差值，返回一个 timespec 结构体
 void Time::toLocalTime(time_t second, long timezone, struct tm *tm_time)
 {
     time_t local_time = second - timezone;

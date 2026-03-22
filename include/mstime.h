@@ -30,6 +30,12 @@ namespace minico
 
         static time_t nowSec(); // 获取当前时间，单位秒
 
+        /**
+         * @brief 将秒数转换为本地时间
+         * @param second 以秒为单位的时间值
+         * @param timezone 时区偏移量，单位为秒
+         * @param tm_time 输出参数，指向一个 tm 结构体，用于存储转换后的本地时间
+         */
         static void toLocalTime(time_t second, long timezone, struct tm *tm_time);
 
         struct timespec timeIntervalFromNow(); // 计算当前时间与对象时间的差值，返回一个 timespec 结构体
