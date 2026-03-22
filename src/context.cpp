@@ -50,6 +50,8 @@ void Context::makeContext(void (*func)(), Processor *pP, Context *pLink)
 
     // 设置协程栈指针和大小
     ctx_.uc_stack.ss_sp = pStack_;
+
+    // TODO: 使用构造传入的 stackSize_，不要写死默认值
     ctx_.uc_stack.ss_size = parameter::coroutineStackSize;
 
     // 设置协程执行完后的下一个上下文
