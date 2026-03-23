@@ -3,7 +3,10 @@
 #include <set>
 #include <mutex>
 #include <thread>
+#include <vector>
+#include <atomic>
 #include <functional>
+
 #include "objpool.h"
 #include "spinlock.h"
 #include "context.h"
@@ -11,137 +14,205 @@
 #include "epoller.h"
 #include "timer.h"
 #include "logger.h"
+
 /**
- * @brief 处理器（对应一个CPU的核心，在netco中对应一个线程） 其实质就是一个线程
- * @detail 负责存放协程Coroutine实例并管理其生命期
- * @param[in] newCoroutines_ 新协程双缓冲队列，使用一个队列来存放新来的协程，另一个队列给Processor主循环用于执行新来的协程，消费完成以后就交换队列（每加入一次新协程就唤醒一次主循环，以立即执行新来的协程）
- * @param[in] actCoroutines_ 被epoll激活的协程队列.当epoll_wait被激活时，Processor主循环会尝试从Epoll中获取活跃的协程，存放在该actCoroutines队列中，然后依次恢复执行
- * @param[in] timerExpiredCo_ 超时的协程队列.当epoll_wait被激活时,Processor主循环会首先尝试从Timer中获取活跃的协程，存放在timerExpiredCo队列中，然后依次恢复执行
- * @param[in] removedCo_ 被移除的协程队列.执行完的协程会首先放到该队列中,在一次循环的最后被统一清理
- * @detail 主循环执行顺序：timer->new->act->remove
+ * @brief 协程调度器
+ *
+ * @details
+ * Processor 表示一个运行在独立线程上的协程调度器，负责管理该线程上的所有协程对象，
+ * 并驱动协程在以下几类事件下恢复执行：
+ * 1. 新协程加入
+ * 2. epoll 事件触发
+ * 3. 定时器超时
+ * 4. 协程主动让出、等待或退出
+ *
+ * 调度器内部采用双缓冲新协程队列，以减少并发写入与主循环消费之间的冲突。
+ * 主循环会按固定顺序处理任务：
+ * timer -> pending(new) -> ready(epoll) -> cleanup
+ *
+ * 主要职责：
+ * - 接收并调度新协程
+ * - 维护协程生命周期
+ * - 处理 IO 事件与定时事件
+ * - 提供协程切换、挂起、唤醒、销毁能力
  */
-extern __thread int threadIdx;
+
+extern thread_local int threadIdx;
 
 namespace minico
 {
 
-    enum processorStatus
+    enum class ProcessorStatus
     {
-        PRO_RUNNING = 0,
-        PRO_STOPPING,
-        PRO_STOPPED
+        Running = 0,
+        Stopping,
+        Stopped
     };
 
-    enum newCoAddingStatus
+    // 新协程是否正在加入双缓冲队列
+    enum class NewCoroutineState
     {
-        NEWCO_ADDING = 0,
-        NEWCO_ADDED
+        Adding,
+        Added
     };
 
     class Processor
     {
     public:
-        Processor(int);
+        /** 构造一个调度器实例，tid 表示线程编号 */
+        explicit Processor(int tid);
+
+        /** 析构调度器，负责释放资源 */
         ~Processor();
 
+        /** 禁止拷贝、移动和赋值，避免线程/上下文被错误复制 */
         DISALLOW_COPY_MOVE_AND_ASSIGN(Processor);
 
-        /** 运行一个新协程，该协程的函数是func*/
-        void goNewCo(std::function<void()> &&func, size_t stackSize);
-        void goNewCo(std::function<void()> &func, size_t stackSize);
-
-        /** 暂停运行当前协程*/
-        void yield();
-
-        /** 当前运行协程等待time毫秒*/
-        void wait(Time time);
-
-        /** 销毁当前运行的协程*/
-        void killCurCo();
-
-        /** 处理器对应线程的主事件循环*/
-        bool loop();
-
-        /** 停止线程循环*/
-        void stop();
-        void join();
-
-        /** 等待fd上的ev事件返回*/
-        void waitEvent(int fd, int ev);
-
-        /** 获取正在运行的协程*/
-        inline Coroutine *getCurRunningCo() { return pCurCoroutine_; };
-
-        /** 获取当前处理器的主程序上下文*/
-        inline Context *getMainCtx() { return &mainCtx_; }
-
-        /** 获取当前处理器存在的协程总数量*/
-        inline size_t getCoCnt() { return coSet_.size(); }
-
-        /** 运行一个指定的协程*/
-        void goCo(Coroutine *co);
-
-        /** 运行一组指定的协程*/
-        void goCoBatch(std::vector<Coroutine *> &cos);
-
-    private:
-        /** 恢复运行指定协程*/
-        void resume(Coroutine *);
-
-        /** 唤醒epoll */
-        inline void wakeUpEpoller();
-
-        /** 处理器编号*/
-        int tid_;
-
-        /** 处理器状态*/
-        int status_;
-
-        /** 处理器对应线程*/
-        std::thread *pLoop_;
+        // =========================
+        // 协程创建与调度
+        // =========================
 
         /**
-         * @brief 双缓冲任务队列
-         * 一个队列存放新加入的协程，另一个用于执行存放的协程
-         * 消费完毕后就交换队列
-         * */
-        std::queue<Coroutine *> newCoroutines_[2];
+         * @brief 创建并调度一个新的协程
+         * @tparam F 协程入口函数的类型
+         * @param coFunc 协程入口函数
+         * @param stackSize 协程栈大小
+         */
+        template <typename F>
+        void Processor::goNewCo(F &&coFunc, size_t stackSize)
+        {
+            Coroutine *pCo = nullptr;
+            {
+                SpinlockGuard lock(coPoolLock_);
+                pCo = coPool_.new_obj(this, stackSize, std::forward<F>(coFunc));
+            }
+            goCo(pCo);
+        }
 
-        /** 双缓冲任务队列编号 0 or 1*/
-        volatile int runningNewQue_;
+        /** 调度一个已经存在的协程对象 */
+        void goCo(Coroutine *co);
 
-        /** 自旋锁，用于切换双缓冲任务队列*/
-        Spinlock newQueLock_;
+        /** 批量调度一组已存在的协程对象 */
+        void goCoBatch(const std::vector<Coroutine *> &cos);
 
-        /** 自旋锁，用于对象池操作*/
-        Spinlock coPoolLock_;
+        // =========================
+        // 协程运行控制
+        // =========================
 
-        /** 被epoll激活的协程任务队列*/
-        std::vector<Coroutine *> actCoroutines_;
+        /** 当前协程主动让出执行权 */
+        void yield();
 
-        /** 记录当前处理器搭载的所有协程*/
-        std::set<Coroutine *> coSet_;
+        /** 当前协程等待指定时间，单位为毫秒 */
+        void wait(Time time);
 
-        /** 协程定时任务队列*/
-        std::vector<Coroutine *> timerExpiredCo_;
+        /** 销毁当前正在运行的协程 */
+        void killCurCo();
 
-        /** 待销毁协程任务队列*/
-        std::vector<Coroutine *> removedCo_;
+        /** 等待 fd 上发生 ev 事件 */
+        void waitEvent(int fd, int ev);
 
-        /** epoll控制体*/
-        Epoller epoller_;
+        // =========================
+        // 主循环与线程控制
+        // =========================
 
-        /** 定时器*/
+        /** 运行处理器的主事件循环 */
+        bool loop();
+
+        /** 请求停止线程循环 */
+        void stop();
+
+        /** 等待线程退出 */
+        void join();
+
+        // =========================
+        // 查询接口
+        // =========================
+
+        /** 获取当前正在运行的协程 */
+        Coroutine *getCurRunningCo() const { return currentCoroutine_; }
+
+        /** 获取调度器主上下文 */
+        Context *getMainCtx() { return &schedulerContext_; }
+
+        /** 获取当前调度器管理的协程总数 */
+        std::size_t getCoCnt() const { return allCoroutines_.size(); }
+
+    private:
+        // =========================
+        // 核心运行控制
+        // =========================
+
+        /** 恢复指定协程的执行 */
+        void resumeCoroutine(Coroutine *co);
+
+        /** 唤醒阻塞在epoll的线程 */
+        void wakeEpoller();
+
+        /** 当前处理器所属线程编号 */
+        int threadId_;
+
+        /** 当前调度器状态 */
+        ProcessorStatus state_;
+
+        /** 调度器对应的工作线程 */
+        std::thread workerThread_;
+
+        // =========================
+        // 新协程加入管理
+        // =========================
+
+        /**
+         * @brief 待调度协程队列（双缓冲）
+         * @note 两个队列交替使用，实现生产者写入与消费者读取的解耦，减少锁竞争。
+         */
+        std::queue<Coroutine *> pendingCoroutines_[2];
+
+        /**
+         * @brief 当前活跃队列索引
+         * @note 原子变量，值为0或1。生产者写入非活跃队列，消费者取出活跃队列。
+         */
+        std::atomic<int> activePendingQueue_{0};
+
+        /** 保护 pending 队列切换与写入的锁 */
+        Spinlock pendingQueueLock_;
+
+        // =========================
+        // 协程生命周期管理
+        // =========================
+
+        /** 保护协程对象池的锁 */
+        Spinlock coroutinePoolLock_;
+
+        /** 当前调度器管理的所有协程集合，用于生命周期跟踪 */
+        std::set<Coroutine *> allCoroutines_;
+
+        /** 因定时器超时而重新变为可执行的协程队列 */
+        std::vector<Coroutine *> timeoutCoroutines_;
+
+        /** 已结束、等待统一销毁的协程队列 */
+        std::vector<Coroutine *> cleanupCoroutines_;
+
+        /** 协程对象池，用于复用 Coroutine 对象 */
+        ObjPool<Coroutine> coroutinePool_;
+
+        // =========================
+        // 事件驱动与调度上下文
+        // =========================
+
+        /** 已经可以继续执行的协程队列（来自 epoll 激活） */
+        std::vector<Coroutine *> readyCoroutines_;
+
+        /** epoll 事件轮询器 */
+        Epoller eventPoller_;
+
+        /** 定时器管理器 */
         Timer timer_;
 
-        /** 对象池*/
-        ObjPool<Coroutine> coPool_;
+        /** 当前正在运行的协程 */
+        Coroutine *currentCoroutine_;
 
-        /** 处理器当前运行的协程*/
-        Coroutine *pCurCoroutine_;
-
-        /** 处理器当前程序上下文*/
-        Context mainCtx_;
+        /** 调度器主上下文，用于协程切换 */
+        Context schedulerContext_;
     };
 
 }

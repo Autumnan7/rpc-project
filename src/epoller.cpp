@@ -34,7 +34,9 @@ namespace minico
         {
             return false;
         }
-        epoll_event event{static_cast<uint32_t>(events), pCo};
+        epoll_event event{};
+        event.events = static_cast<uint32_t>(events);
+        event.data.ptr = pCo;
 
         return ::epoll_ctl(epollFd_, EPOLL_CTL_ADD, fd, &event) == 0;
     }
