@@ -9,6 +9,7 @@
 
 #include "objpool.h"
 #include "spinlock.h"
+#include "spinlock_guard.h"
 #include "context.h"
 #include "coroutine.h"
 #include "epoller.h"
@@ -79,12 +80,12 @@ namespace minico
          * @param stackSize 协程栈大小
          */
         template <typename F>
-        void Processor::goNewCo(F &&coFunc, size_t stackSize)
+        void goNewCo(F &&coFunc, size_t stackSize)
         {
             Coroutine *pCo = nullptr;
             {
-                SpinlockGuard lock(coPoolLock_);
-                pCo = coPool_.new_obj(this, stackSize, std::forward<F>(coFunc));
+                SpinlockGuard lock(coroutinePoolLock_);
+                pCo = coroutinePool_.new_obj(this, stackSize, std::forward<F>(coFunc));
             }
             goCo(pCo);
         }

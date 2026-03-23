@@ -14,7 +14,9 @@ Processor::Processor(int tid)
       state_(ProcessorStatus::Stopped),
       workerThread_(),
       activePendingQueue_(0),
-      currentCoroutine_(nullptr)
+      currentCoroutine_(nullptr),
+      // TODO: 参考用的是0
+      schedulerContext_(parameter::coroutineStackSize)
 {
     // 初始化处理器主程序上下文
     schedulerContext_.makeCurContext();
@@ -223,6 +225,7 @@ void Processor::waitEvent(int fd, int ev)
 void Processor::stop()
 {
     state_ = ProcessorStatus::Stopping;
+    wakeEpoller();
 }
 
 void Processor::join()
