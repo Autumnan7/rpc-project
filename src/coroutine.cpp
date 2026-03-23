@@ -12,16 +12,16 @@ static void coWrapFunc(Processor *pP)
     pP->killCurCo();
 }
 
-Coroutine(Processor *processor, size_t stackSize, std::function<void()> &&)
-    : func_((std::move(func_))),
+Coroutine::Coroutine(Processor *processor, size_t stackSize, std::function<void()> &&func)
+    : func_(std::move(func)),
       processor_(processor),
       status_(coStatus::CO_READY),
       ctx_(stackSize)
 {
 }
 
-Coroutine::Coroutine(Processor *processor, size_t stackSize, std::function<void()> &func)
-    : coFunc_(func),
+Coroutine::Coroutine(Processor *processor, size_t stackSize, const std::function<void()> &func)
+    : func_(func),
       processor_(processor),
       status_(coStatus::CO_READY),
       ctx_(stackSize)

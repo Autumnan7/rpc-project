@@ -37,6 +37,18 @@ namespace minico
         // 切出当前协程
         void yield();
 
+        // 执行协程函数体
+        inline void startFunc()
+        {
+            if (func_)
+            {
+                func_();
+            }
+        }
+
+        // 获取协程上下文
+        inline Context *getCtx() { return &ctx_; }
+
         coStatus getStatus() const { return status_; }
 
     private:
