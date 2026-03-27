@@ -60,7 +60,10 @@ namespace minico
     class Processor
     {
     public:
-        /** 构造一个调度器实例，tid 表示线程编号 */
+        /** 构造一个调度器实例，tid 表示线程编号
+         * explicit：表示这个构造函数只能显式调用，禁止编译器把 int 自动转换成 Processor。
+         */
+
         explicit Processor(int tid);
 
         /** 析构调度器，负责释放资源 */
@@ -79,7 +82,7 @@ namespace minico
          * @param coFunc 协程入口函数
          * @param stackSize 协程栈大小
          */
-        template <typename F>
+        template <typename F> // 类模板
         void goNewCo(F &&coFunc, size_t stackSize)
         {
             Coroutine *pCo = nullptr;
@@ -93,7 +96,10 @@ namespace minico
         /** 调度一个已经存在的协程对象 */
         void goCo(Coroutine *co);
 
-        /** 批量调度一组已存在的协程对象 */
+        /**
+         * @brief 批量调度一组已存在的协程对象
+         * @param cos 协程对象指针向量
+         */
         void goCoBatch(const std::vector<Coroutine *> &cos);
 
         // =========================
@@ -153,7 +159,7 @@ namespace minico
         int threadId_;
 
         /** 当前调度器状态 */
-        ProcessorStatus state_;
+        std::atomic<ProcessorStatus> state_;
 
         /** 调度器对应的工作线程 */
         std::thread workerThread_;

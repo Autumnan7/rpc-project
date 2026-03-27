@@ -21,20 +21,47 @@ namespace minico
 
         DISALLOW_COPY_MOVE_AND_ASSIGN(ObjPool);
 
+        /**
+         * @brief 创建并返回一个对象池中的对象。
+         * @note T 是否为平凡可构造类型进行编译期分发
+         * @note - 如果 T 是平凡可构造的，则直接从内存池申请一块内存即可；
+         * @note - 如果 T 需要构造函数，则在申请到的内存上执行 placement new 进行原地构造。
+         */
         template <typename... Args>
         inline T *new_obj(Args... args);
 
+        /**
+         * @brief 释放对象池中的对象指针。
+         *
+         * @note 根据 T 是否为平凡可析构类型进行编译期分发：决定是否需要显式调用析构函数
+         * @param obj 要释放的对象指针。
+         */
         inline void delete_obj(void *obj);
 
     private:
+        /**
+         * @brief 平凡可构造类型的对象创建：直接从内存池申请一块内存即可。
+         */
         template <typename... Args>
-        inline T *new_aux(std::true_type, Args... args);
+        inline T *new_aux(std::true_type, Args... args); // aux:auxiliary 辅助实现函数
 
+        /**
+         * @brief 非平凡可构造类型的对象创建
+         * @note 先从内存池申请一块原始内存，然后在该内存上使用 placement new 构造对象。
+         */
         template <typename... Args>
         inline T *new_aux(std::false_type, Args... args);
 
+        /**
+         * @brief 平凡可析构类型的对象释放
+         * @note 不需要显式调用析构函数，直接归还内存块即可。
+         */
         inline void delete_aux(std::true_type, void *obj);
 
+        /**
+         * @brief 非平凡可析构类型的对象释放：
+         * @note 先显式调用析构函数，再将内存块归还给内存池。
+         */
         inline void delete_aux(std::false_type, void *obj);
 
         MemPool<sizeof(T)> _memPool;
@@ -44,13 +71,16 @@ namespace minico
     template <typename... Args>
     inline T *ObjPool<T>::new_obj(Args... args)
     {
-        return new_aux(std::integral_constant<bool, std::is_trivially_constructible<T>::value>(), args...);
+        return new_aux(
+            std::integral_constant<bool, std::is_trivially_constructible<T>::value>(),
+            args...);
     }
 
     template <class T>
     template <typename... Args>
     inline T *ObjPool<T>::new_aux(std::true_type, Args... args)
     {
+
         return static_cast<T *>(_memPool.AllocAMemBlock());
     }
 
@@ -58,21 +88,25 @@ namespace minico
     template <typename... Args>
     inline T *ObjPool<T>::new_aux(std::false_type, Args... args)
     {
+        // 先从内存池申请一块原始内存
         void *newPos = _memPool.AllocAMemBlock();
-        // placement new版本，它本质上是对operator new的重载，定义于#include <new>中。它不分配内存，
-        // 调用合适的构造函数在ptr所指的地方构造一个对象，之后返回实参指针ptr
-        // 调用方式 new(p)A();
-        // new (p)A()调用placement new之后，还会在p上调用A::A()，这里的p可以是堆中动态分配的内存，也可以是栈中缓冲
+
+        // 在申请到的内存上使用 placement new 构造对象：
+        // 1. 不额外分配内存；
+        // 2. 直接在 newPos 指向的地址上调用 T 的构造函数；
+        // 3. 返回构造完成后的对象指针。
         return new (newPos) T(args...);
     }
 
     template <class T>
     inline void ObjPool<T>::delete_obj(void *obj)
     {
+        // 空指针直接返回，避免后续访问非法内存
         if (!obj)
         {
             return;
         }
+
         delete_aux(std::integral_constant<bool, std::is_trivially_destructible<T>::value>(), obj);
     }
 
@@ -85,9 +119,7 @@ namespace minico
     template <class T>
     inline void ObjPool<T>::delete_aux(std::false_type, void *obj)
     {
-        // 将obj转为T指针，并调用析构函数
         (static_cast<T *>(obj))->~T();
         _memPool.FreeAMemBlock(obj);
     }
-
 }

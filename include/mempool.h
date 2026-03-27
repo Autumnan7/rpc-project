@@ -99,9 +99,8 @@ namespace minico
          * @brief 分配一块内存
          * @return 返回块内数据区首地址；失败返回 nullptr
          *
-         * 注意：
-         * - 返回值指向的是可直接使用的对象内存
-         * - 调用方必须保证释放时调用 FreeAMemBlock()
+         * @note - 返回值指向的是可直接使用的对象内存
+         * @note - 调用方必须保证释放时调用 FreeAMemBlock()
          */
         void *AllocAMemBlock();
 
@@ -109,9 +108,8 @@ namespace minico
          * @brief 释放一块内存
          * @param block 由 AllocAMemBlock() 返回的地址
          *
-         * 注意：
-         * - 这里只是把块挂回空闲链表，并不真正归还给系统
-         * - 系统内存会在 MemPool 析构时统一释放
+         * @note - 这里只是把块挂回空闲链表，并不真正归还给系统
+         * @note - 系统内存会在 MemPool 析构时统一释放
          */
         void FreeAMemBlock(void *block);
 

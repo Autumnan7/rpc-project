@@ -30,18 +30,6 @@ Processor::~Processor()
         stop();
     }
 
-    // // 如果已经进入停止中状态，等待线程退出
-    // if (state_ == ProcessorStatus::Stopping)
-    // {
-    //     join();
-    // }
-
-    // // 清理工作线程对象
-    // if (workerThread_.joinable())
-    // {
-    //     workerThread_.join();
-    // }
-
     join();
 
     // 释放所有仍由 Processor 管理的协程对象

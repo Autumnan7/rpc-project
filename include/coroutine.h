@@ -22,6 +22,7 @@ namespace minico
     {
     public:
         // std::function<void()> func; 表示 func 是一个装有“无参无返回值函数”的盒子。
+        // std::function 的作用就是“把任务函数封装成一个可传递、可保存、可统一调用的对象”
         // 声明中可以省略 变量名称
         Coroutine(Processor *, size_t stackSize, std::function<void()> &&);
         // const 表示不会更改
@@ -37,6 +38,9 @@ namespace minico
         // 切出当前协程
         void yield();
 
+        // 获取当前processor指针
+        Processor *getOwnerProcessor() { return processor_; }
+
         // 执行协程函数体
         inline void startFunc()
         {
@@ -49,6 +53,7 @@ namespace minico
         // 获取协程上下文
         inline Context *getCtx() { return &ctx_; }
 
+        // 原文并没有这个函数，似乎也没有被使用
         coStatus getStatus() const { return status_; }
 
     private:

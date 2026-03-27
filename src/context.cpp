@@ -74,9 +74,8 @@ void Context::makeCurContext()
  * @brief 切换到当前 Context
  * @param pOldCtx 保存当前上下文的 Context，如果为空则直接切换
  *
- * @note 流程：
- *  - 如果 pOldCtx 为 nullptr，直接 setcontext 切换，不会返回
- *  - 如果 pOldCtx 非空，swapcontext 保存原上下文到 pOldCtx 并切换到 ctx_
+ * @note - 如果 pOldCtx 为 nullptr，直接 setcontext 切换，不会返回
+ * @note - pOldCtx 非空，swapcontext 保存原上下文到 pOldCtx 并切换到 ctx_
  */
 void Context::swapToMe(Context *pOldCtx)
 {

@@ -28,31 +28,22 @@ namespace minico
          */
         ~Context();
 
-        /**
-         * @brief 拷贝构造函数
-         * @note 仅拷贝 ctx_ 和 pStack_ 指针，实际上可能存在栈重复释放问题
-         *       在实际项目中一般禁用拷贝构造，只使用移动构造
-         */
-        Context(const Context &otherCtx)
-            : ctx_(otherCtx.ctx_), pStack_(otherCtx.pStack_)
-        {
-        }
+        // 禁止拷贝构造和拷贝赋值，避免上下文被错误复制
+        Context(const Context &otherCtx) = delete;
+        Context &operator=(const Context &otherCtx) = delete;
 
         /**
          * @brief 移动构造函数
          * @note 将上下文资源（栈指针和上下文数据）从 otherCtx 移动到 this
-         *       移动后建议将 otherCtx.pStack_ 置 nullptr 避免析构重复释放
          */
         Context(Context &&otherCtx)
-            : ctx_(otherCtx.ctx_), pStack_(otherCtx.pStack_)
+            : ctx_(otherCtx.ctx_),
+              pStack_(otherCtx.pStack_),
+              stackSize_(otherCtx.stackSize_)
         {
+            otherCtx.pStack_ = nullptr; // 避免析构时重复释放
+            otherCtx.stackSize_ = 0;
         }
-
-        /**
-         * @brief 拷贝赋值操作符禁用
-         * @note 不允许通过赋值拷贝 Context
-         */
-        Context &operator=(const Context &otherCtx) = delete;
 
         /**
          * @brief 设置上下文入口函数
