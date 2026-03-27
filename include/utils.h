@@ -5,4 +5,6 @@
     TypeName(const TypeName &) = delete;            \
     TypeName(TypeName &&) = delete;                 \
     TypeName &operator=(const TypeName &) = delete; \
-    TypeName &operator=(TypeName &&) = delete;
+    TypeName &operator=(TypeName &&) = delete
+
+// 要求以空行结尾
