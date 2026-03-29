@@ -1,73 +1,147 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文档为 AI 助手（如 Claude、GPT 等）提供项目上下文，帮助理解和操作本代码库。
 
-## Build & Run
+## 项目概述
+
+这是一个基于 GNU ucontext API 的用户态协程调度框架（mini coroutine），使用 C++17 开发。项目目标是实现一个高性能的协程调度系统，可作为 RPC 框架的基础组件。
+
+### 核心技术栈
+- **语言标准**: C++17
+- **构建系统**: CMake 3.16+
+- **协程实现**: GNU ucontext API
+- **事件驱动**: epoll (Linux)
+- **线程支持**: std::thread, std::atomic
+
+## 构建与运行
 
 ```bash
-mkdir build && cd build
+# 创建构建目录并编译
+mkdir -p build && cd build
 cmake ..
 make
 
-# Run smoke test
+# 运行冒烟测试
 ./bin/rpc_demo
 
-# Build and run specific example
+# 重新编译并运行
 make && ./bin/rpc_demo
 ```
 
-## Architecture Overview
+### 输出目录
+- 可执行文件: `bin/`
+- 库文件: `lib/`
 
-This is a user-mode coroutine scheduling framework based on GNU ucontext API.
+## 架构概览
 
-### Core Layers (bottom-up):
+项目采用分层架构，自底向上分为以下层次：
 
-1. **Memory Layer** (`mempool.h`, `objpool.h`)
-   - `MemPool<T>`: Fixed-size memory pool using free-list, grows incrementally
-   - `ObjPool<T>`: Object pool with placement new, handles trivial/non-trivial types via `std::integral_constant` dispatch
+### 1. 内存层 (`include/mempool.h`, `include/objpool.h`)
+- `MemPool<T>`: 固定大小内存池，使用空闲链表实现，按需增长
+- `ObjPool<T>`: 对象池，使用 placement new 构造对象，通过 `std::integral_constant` 分发处理 trivial/non-trivial 类型
 
-2. **Context Layer** (`context.h`, `coroutine.h`)
-   - `Context`: Wraps `ucontext_t`, manages stack allocation and context switching
-   - `Coroutine`: Encapsulates coroutine state (READY/RUNNING/SUSPEND/DEAD), function, and context
+### 2. 上下文层 (`include/context.h`, `include/coroutine.h`)
+- `Context`: 封装 `ucontext_t`，管理栈分配和上下文切换
+- `Coroutine`: 协程封装，状态包括 READY/RUNNING/SUSPEND/DEAD
 
-3. **Scheduling Layer** (`processor.h`, `scheduler.h`, `processor_selector.h`)
-   - `Processor`: Single-threaded scheduler with event loop (timer → pending → epoll → cleanup)
-   - `Scheduler`: Global singleton managing multiple Processors, auto-selects by CPU core count
-   - `ProcessorSelector`: Strategies include MIN_EVENT_FIRST (default) and ROUND_ROBIN
+### 3. 调度层 (`include/processor.h`, `include/scheduler.h`, `include/processor_selector.h`)
+- `Processor`: 单线程调度器，事件循环顺序: timer → pending → epoll → cleanup
+- `Scheduler`: 全局单例，管理多个 Processor，自动按 CPU 核心数选择
+- `ProcessorSelector`: 调度策略，包括 MIN_EVENT_FIRST (默认) 和 ROUND_ROBIN
 
-4. **Event Layer** (`epoller.h`, `timer.h`)
-   - `Epoller`: EPOLLIN/EPOLLOUT event registration with coroutine mapping
-   - `Timer`: Priority queue (min-heap) of (Time, Coroutine*) pairs, uses timerfd for wakeups
+### 4. 事件层 (`include/epoller.h`, `include/timer.h`)
+- `Epoller`: EPOLLIN/EPOLLOUT 事件注册，与协程映射
+- `Timer`: 最小堆存储 (Time, Coroutine*) 对，使用 timerfd 唤醒
 
-5. **Synchronization** (`mutex.h`, `spinlock.h`, `spinlock_guard.h`)
-   - `Spinlock`: Atomic compare-exchange lock
-   - `SpinlockGuard`: RAII wrapper
-   - `RWMutex`: Coroutine-safe read-write lock with waiting queue
+### 5. 同步原语 (`include/mutex.h`, `include/spinlock.h`)
+- `Spinlock`: 原子比较交换锁
+- `SpinlockGuard`: RAII 包装器
+- `RWMutex`: 协程安全的读写锁，带等待队列
 
-### Key Design Patterns:
-- Double-buffered pending queue in Processor reduces lock contention
-- Object pooling for Coroutine allocation
-- Thread-local `threadIdx` for processor identification
-- RAII for resource management throughout
+### 6. 网络层 (`include/socket.h`)
+- `Socket`: 封装 TCP/UDP socket，支持协程化 IO 操作
+- 将阻塞 IO 改造为协程可调度的非阻塞 IO
 
-### Public API (`minico_api.h`):
+## 公共 API
+
 ```cpp
-void co_go(std::function<void()>, size_t stackSize, int tid = -1);
-void co_sleep(Time);
+namespace minico {
+
+// 创建并调度新协程
+void co_go(std::function<void()> func, size_t stackSize = parameter::coroutineStackSize, int tid = -1);
+
+// 协程休眠
+void co_sleep(Time t);
+
+// 等待调度器停止
 void sche_join();
+
+}
 ```
 
-## Known Issues to Address
+## 关键设计模式
 
-1. `include/context.h:1` - Circular self-include
-2. `src/context.cpp:55` - Uses hardcoded stack size instead of constructor parameter (has TODO comment)
-3. `src/processor.cpp:34-43` - Dead commented code in destructor
-4. `include/mutex.h:23` - Recursive rlock() may cause issues in edge cases
-5. `src/processor_selector.cpp:14` - `front()` access pattern is risky despite size check
+1. **双缓冲待调度队列**: Processor 中使用两个队列交替，减少生产者写入与消费者读取的锁竞争
+2. **对象池复用**: Coroutine 对象通过 ObjPool 分配，避免频繁内存分配
+3. **线程本地存储**: `thread_local int threadIdx` 用于处理器识别
+4. **RAII 资源管理**: SpinlockGuard、Context 等均采用 RAII 模式
 
-## Testing
+## 目录结构
 
-The primary test is `examples/processor_smoke_test.cpp` which validates:
-- Coroutine creation and execution
-- Timer-based suspension and resume
-- Processor event loop functionality
+```
+/home/wyn/rpc-project/
+├── include/          # 头文件
+│   ├── context.h     # 上下文封装
+│   ├── coroutine.h   # 协程定义
+│   ├── epoller.h     # epoll 封装
+│   ├── logger.h      # 日志系统
+│   ├── mempool.h     # 内存池
+│   ├── minico_api.h  # 公共 API
+│   ├── mutex.h       # 读写锁
+│   ├── objpool.h     # 对象池
+│   ├── parameter.h   # 编译期参数
+│   ├── processor.h   # 处理器/调度器
+│   ├── scheduler.h   # 全局调度器
+│   ├── socket.h      # 网络封装
+│   ├── spinlock.h    # 自旋锁
+│   ├── timer.h       # 定时器
+│   └── utils.h       # 工具宏
+├── src/              # 源文件实现
+├── examples/         # 测试用例
+│   └── processor_smoke_test.cpp  # 核心冒烟测试
+├── bin/              # 可执行文件输出
+├── lib/              # 库文件输出
+└── build/            # 构建目录
+```
+
+## 已知问题
+
+| 位置 | 问题描述 |
+|------|----------|
+| `include/context.h:1` | 循环自包含 |
+| `src/context.cpp:55` | 使用硬编码栈大小而非构造函数参数（有 TODO 注释）|
+| `src/processor.cpp:34-43` | 析构函数中有注释掉的死代码 |
+| `include/mutex.h:23` | 递归调用 rlock() 可能在边界情况下有问题 |
+| `src/processor_selector.cpp:14` | `front()` 访问模式虽然有大小检查但仍存在风险 |
+
+## 编码规范
+
+1. **命名空间**: 所有代码位于 `minico` 命名空间
+2. **禁用拷贝/移动**: 使用 `DISALLOW_COPY_MOVE_AND_ASSIGN` 宏
+3. **日志宏**: `LOG_INFO`, `LOG_ERROR`, `LOG_DEBUG`
+4. **成员变量**: 使用下划线后缀 (`_sockfd`) 或下划线前缀 (`_freeListHead`)
+5. **注释风格**: 使用 Doxygen 风格文档注释
+
+## 测试
+
+主要测试文件为 `examples/processor_smoke_test.cpp`，验证：
+- 协程创建与执行
+- 定时器暂停与恢复
+- 处理器事件循环功能
+
+## 依赖
+
+- Linux 系统（依赖 epoll、timerfd、ucontext）
+- pthread 库
+- CMake 3.16+
+- C++17 兼容编译器
