@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 #include <vector>
+#include <string_view>
 #include <sys/sysinfo.h>
 
 #include "../../include/logger.h"
@@ -13,13 +14,13 @@
  * @brief 基于协程的 TCP 服务器基类
  * @note 采用 Reactor 模式，主协程负责 accept，新连接派发独立协程处理
  */
-class TcpServer
-{
+class TcpServer {
 public:
     /** @brief 客户端连接处理回调函数类型 */
     using conn_callback = std::function<void(minico::Socket)>;
 
     TcpServer();
+
     virtual ~TcpServer();
 
     /**
@@ -27,14 +28,14 @@ public:
      * @param ip   监听的 IP 地址
      * @param port 监听的端口号
      */
-    void start(const char *ip, int port);
+    void start(std::string_view ip, int port);
 
     /**
      * @brief 启动多线程模式服务器 (基于 SO_REUSEPORT)
      * @param ip   监听的 IP 地址
      * @param port 监听的端口号
      */
-    void start_multi(const char *ip, int port);
+    void start_multi(std::string_view ip, int port);
 
     /**
      * @brief 注册连接到达后的业务处理回调

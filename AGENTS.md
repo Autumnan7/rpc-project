@@ -38,6 +38,10 @@ make && ./bin/processor_smoke_test
 - 可执行文件: `bin/`
 - 库文件: `lib/`
 
+### 编译器支持
+- **GCC/Clang**: 使用 `-Wall -Wextra -Wpedantic` 警告选项
+- **MSVC**: 使用 `/W4 /permissive-` 警告选项（但代码依赖 Linux API，无法在 Windows 上实际编译）
+
 ## 架构概览
 
 项目采用分层架构，自底向上分为以下层次：
@@ -59,12 +63,16 @@ make && ./bin/processor_smoke_test
 - `Epoller`: EPOLLIN/EPOLLOUT 事件注册，与协程映射
 - `Timer`: 最小堆存储 (Time, Coroutine*) 对，使用 timerfd 唤醒
 
-### 5. 同步原语 (`include/mutex.h`, `include/spinlock.h`)
+### 5. 时间层 (`include/mstime.h`)
+- `Time`: 时间封装类，提供当前时间获取、时间比较、时间间隔计算等功能
+- 支持毫秒级精度，提供与 `timespec` 结构体的转换
+
+### 6. 同步原语 (`include/mutex.h`, `include/spinlock.h`, `include/spinlock_guard.h`)
 - `Spinlock`: 原子比较交换锁
-- `SpinlockGuard`: RAII 包装器
+- `SpinlockGuard`: RAII 包装器，独立的头文件
 - `RWMutex`: 协程安全的读写锁，带等待队列
 
-### 6. 网络层 (`include/socket.h`, `include/tcp/`)
+### 7. 网络层 (`include/socket.h`, `include/tcp/`)
 - `Socket`: 封装 TCP/UDP socket，支持协程化 IO 操作
 - `TcpServer`: 基于 Reactor 模式的 TCP 服务器，支持单线程和多线程模式
 - `TcpClient`: TCP 客户端封装，提供协程安全的连接、收发接口
@@ -75,7 +83,8 @@ make && ./bin/processor_smoke_test
 namespace minico {
 
 // 创建并调度新协程
-void co_go(std::function<void()> func, size_t stackSize = parameter::coroutineStackSize, int tid = -1);
+void co_go(std::function<void()> &func, size_t stackSize = parameter::coroutineStackSize, int tid = -1);
+void co_go(std::function<void()> &&func, size_t stackSize = parameter::coroutineStackSize, int tid = -1);
 
 // 协程休眠
 void co_sleep(Time t);
@@ -97,7 +106,7 @@ void sche_join();
 ## 目录结构
 
 ```
-/home/wyn/rpc-project/
+rpc-project/
 ├── include/              # 头文件
 │   ├── context.h         # 上下文封装
 │   ├── coroutine.h       # 协程定义
@@ -105,13 +114,16 @@ void sche_join();
 │   ├── logger.h          # 日志系统
 │   ├── mempool.h         # 内存池
 │   ├── minico_api.h      # 公共 API
+│   ├── mstime.h          # 时间封装类
 │   ├── mutex.h           # 读写锁
 │   ├── objpool.h         # 对象池
 │   ├── parameter.h       # 编译期参数
 │   ├── processor.h       # 处理器/调度器
+│   ├── processor_selector.h  # 处理器选择策略
 │   ├── scheduler.h       # 全局调度器
 │   ├── socket.h          # 网络封装
 │   ├── spinlock.h        # 自旋锁
+│   ├── spinlock_guard.h  # 自旋锁 RAII 包装器
 │   ├── timer.h           # 定时器
 │   ├── utils.h           # 工具宏
 │   └── tcp/              # TCP 网络模块
@@ -146,21 +158,19 @@ void sche_join();
 
 ## 已知问题
 
-| 位置 | 问题描述 |
-|------|----------|
-| `include/context.h:1` | 循环自包含 |
-| `src/context.cpp:55` | 使用硬编码栈大小而非构造函数参数（有 TODO 注释）|
-| `src/processor.cpp:34-43` | 析构函数中有注释掉的死代码 |
-| `include/mutex.h:23` | 递归调用 rlock() 可能在边界情况下有问题 |
-| `src/processor_selector.cpp:14` | `front()` 访问模式虽然有大小检查但仍存在风险 |
+| 位置 | 问题描述 | 状态 |
+|------|----------|------|
+| `src/context.cpp:83` | 使用硬编码栈大小 `parameter::coroutineStackSize` 而非构造函数参数 `stackSize_`（有 TODO 注释）| 待修复 |
+| `src/mutex.cpp:17` | `rlock()` 递归调用：协程被唤醒后会再次调用 `rlock()` 尝试获取锁 | 设计如此 |
 
 ## 编码规范
 
 1. **命名空间**: 所有代码位于 `minico` 命名空间
 2. **禁用拷贝/移动**: 使用 `DISALLOW_COPY_MOVE_AND_ASSIGN` 宏
 3. **日志宏**: `LOG_INFO`, `LOG_ERROR`, `LOG_DEBUG`
-4. **成员变量**: 使用下划线后缀 (`_sockfd`) 或下划线前缀 (`_freeListHead`)
+4. **成员变量**: 使用下划线后缀 (`_sockfd`, `_timeVal`) 或下划线前缀 (`_freeListHead`)
 5. **注释风格**: 使用 Doxygen 风格文档注释
+6. **模板编程**: 使用 `std::forward` 完美转发，`std::integral_constant` 类型分发
 
 ## 测试
 
@@ -171,10 +181,11 @@ void sche_join();
 
 ## 依赖
 
-- Linux 系统（依赖 epoll、timerfd、ucontext）
-- pthread 库
-- CMake 3.16+
-- C++17 兼容编译器
+- **操作系统**: Linux（依赖 epoll、timerfd、ucontext）
+- **编译器**: GCC 或 Clang（需要支持 ucontext API）
+- **库**: pthread
+- **构建工具**: CMake 3.16+
+- **语言标准**: C++17 兼容编译器
 
 ## 代码修改注意事项
 
@@ -182,3 +193,4 @@ void sche_join();
 2. **新增测试文件**: 需要在 `examples/CMakeLists.txt` 中添加对应的 `add_executable` 和 `target_link_libraries`
 3. **TCP 模块**: TCP 相关代码目前需要单独编译链接对应的 .cpp 文件
 4. **协程安全**: 在协程环境中避免使用阻塞式系统调用，应使用框架提供的协程化接口
+5. **跨平台**: 代码依赖 Linux 特有 API，无法在 Windows/macOS 上编译运行
