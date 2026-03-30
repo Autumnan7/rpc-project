@@ -159,6 +159,7 @@ bool Processor::loop()
                 }
 
 
+                // TODO:可以进一步优化
                 // 2. 执行新加入的协程，按 FIFO 顺序把 pending 队列里的协程交给调度器执行
                 // runningQueue 是当前正在被主循环消费的 pending 队列下标，取值为 0 或 1
                 // pendingCoroutines_[runningQueue] 是当前正在被主循环消费的 pending 队列
@@ -175,6 +176,13 @@ bool Processor::loop()
                     // 上锁并转换任务队列
                     SpinlockGuard lock(pendingQueueLock_);
                     activePendingQueue_ = !runningQueue;
+                }
+
+                // 切换队列后，如果新队列有待处理的协程，需要唤醒 epoller
+                // 否则下一次 epoll_wait(-1) 会无限阻塞，导致协程永远无法执行
+                if (!pendingCoroutines_[!runningQueue].empty())
+                {
+                    wakeEpoller();
                 }
 
                 // 3. 执行被epoll唤醒的协程
@@ -216,6 +224,14 @@ void Processor::stop()
     wakeEpoller();
 }
 
+/**
+ * @brief 等待工作线程结束
+ * 
+ * 封装 std::thread::join()，阻塞当前线程直到工作线程执行完毕
+ * 工作线程在 while 循环检测到 state_ != Running 时会退出事件循环，线程结束
+ * 
+ * @note 调用此函数前应先调用 stop() 设置停止标志
+ */
 void Processor::join()
 {
     if (workerThread_.joinable())

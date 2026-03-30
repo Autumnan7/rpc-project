@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-本文档为 AI 助手（如 Claude、GPT 等）提供项目上下文，帮助理解和操作本代码库。
+本文档为 AI 助手提供项目上下文，帮助理解和操作本代码库。
 
 ## 项目概述
 
@@ -22,10 +22,16 @@ cmake ..
 make
 
 # 运行冒烟测试
-./bin/rpc_demo
+./bin/processor_smoke_test
+
+# 运行 TCP 服务端测试
+./bin/tcp_server_test
+
+# 运行 TCP 客户端测试
+./bin/tcp_client_test
 
 # 重新编译并运行
-make && ./bin/rpc_demo
+make && ./bin/processor_smoke_test
 ```
 
 ### 输出目录
@@ -58,9 +64,10 @@ make && ./bin/rpc_demo
 - `SpinlockGuard`: RAII 包装器
 - `RWMutex`: 协程安全的读写锁，带等待队列
 
-### 6. 网络层 (`include/socket.h`)
+### 6. 网络层 (`include/socket.h`, `include/tcp/`)
 - `Socket`: 封装 TCP/UDP socket，支持协程化 IO 操作
-- 将阻塞 IO 改造为协程可调度的非阻塞 IO
+- `TcpServer`: 基于 Reactor 模式的 TCP 服务器，支持单线程和多线程模式
+- `TcpClient`: TCP 客户端封装，提供协程安全的连接、收发接口
 
 ## 公共 API
 
@@ -85,33 +92,56 @@ void sche_join();
 2. **对象池复用**: Coroutine 对象通过 ObjPool 分配，避免频繁内存分配
 3. **线程本地存储**: `thread_local int threadIdx` 用于处理器识别
 4. **RAII 资源管理**: SpinlockGuard、Context 等均采用 RAII 模式
+5. **Reactor 模式**: TcpServer 主协程负责 accept，新连接派发独立协程处理
 
 ## 目录结构
 
 ```
 /home/wyn/rpc-project/
-├── include/          # 头文件
-│   ├── context.h     # 上下文封装
-│   ├── coroutine.h   # 协程定义
-│   ├── epoller.h     # epoll 封装
-│   ├── logger.h      # 日志系统
-│   ├── mempool.h     # 内存池
-│   ├── minico_api.h  # 公共 API
-│   ├── mutex.h       # 读写锁
-│   ├── objpool.h     # 对象池
-│   ├── parameter.h   # 编译期参数
-│   ├── processor.h   # 处理器/调度器
-│   ├── scheduler.h   # 全局调度器
-│   ├── socket.h      # 网络封装
-│   ├── spinlock.h    # 自旋锁
-│   ├── timer.h       # 定时器
-│   └── utils.h       # 工具宏
-├── src/              # 源文件实现
-├── examples/         # 测试用例
-│   └── processor_smoke_test.cpp  # 核心冒烟测试
-├── bin/              # 可执行文件输出
-├── lib/              # 库文件输出
-└── build/            # 构建目录
+├── include/              # 头文件
+│   ├── context.h         # 上下文封装
+│   ├── coroutine.h       # 协程定义
+│   ├── epoller.h         # epoll 封装
+│   ├── logger.h          # 日志系统
+│   ├── mempool.h         # 内存池
+│   ├── minico_api.h      # 公共 API
+│   ├── mutex.h           # 读写锁
+│   ├── objpool.h         # 对象池
+│   ├── parameter.h       # 编译期参数
+│   ├── processor.h       # 处理器/调度器
+│   ├── scheduler.h       # 全局调度器
+│   ├── socket.h          # 网络封装
+│   ├── spinlock.h        # 自旋锁
+│   ├── timer.h           # 定时器
+│   ├── utils.h           # 工具宏
+│   └── tcp/              # TCP 网络模块
+│       ├── tcp_client.h  # TCP 客户端
+│       └── tcp_server.h  # TCP 服务端
+├── src/                  # 源文件实现
+│   ├── context.cpp
+│   ├── coroutine.cpp
+│   ├── epoller.cpp
+│   ├── logger.cpp
+│   ├── minico_api.cpp
+│   ├── mstime.cpp
+│   ├── mutex.cpp
+│   ├── processor.cpp
+│   ├── processor_selector.cpp
+│   ├── scheduler.cpp
+│   ├── socket.cpp
+│   ├── timer.cpp
+│   └── tcp/
+│       ├── tcp_client.cpp
+│       └── tcp_server.cpp
+├── examples/             # 测试用例
+│   ├── processor_smoke_test.cpp  # 核心冒烟测试
+│   ├── tcp_client_test.cpp       # TCP 客户端测试
+│   ├── tcp_server_test.cpp       # TCP 服务端测试
+│   ├── log_test.cpp              # 日志测试
+│   └── timer_epoller_test.cpp    # 定时器测试
+├── bin/                  # 可执行文件输出
+├── lib/                  # 库文件输出
+└── build/                # 构建目录
 ```
 
 ## 已知问题
@@ -134,10 +164,10 @@ void sche_join();
 
 ## 测试
 
-主要测试文件为 `examples/processor_smoke_test.cpp`，验证：
-- 协程创建与执行
-- 定时器暂停与恢复
-- 处理器事件循环功能
+主要测试文件：
+- `examples/processor_smoke_test.cpp`: 验证协程创建、执行、定时器暂停与恢复、处理器事件循环功能
+- `examples/tcp_server_test.cpp`: TCP 服务端功能测试
+- `examples/tcp_client_test.cpp`: TCP 客户端功能测试
 
 ## 依赖
 
@@ -145,3 +175,10 @@ void sche_join();
 - pthread 库
 - CMake 3.16+
 - C++17 兼容编译器
+
+## 代码修改注意事项
+
+1. **新增源文件**: 需要在 `src/CMakeLists.txt` 中添加到 SOURCES 列表
+2. **新增测试文件**: 需要在 `examples/CMakeLists.txt` 中添加对应的 `add_executable` 和 `target_link_libraries`
+3. **TCP 模块**: TCP 相关代码目前需要单独编译链接对应的 .cpp 文件
+4. **协程安全**: 在协程环境中避免使用阻塞式系统调用，应使用框架提供的协程化接口

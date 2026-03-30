@@ -61,6 +61,14 @@ void Scheduler::createNewCo(std::function<void()> &func, size_t stackSize)
 	proSelector_.next()->goNewCo(func, stackSize);
 }
 
+/**
+ * @brief 等待所有 Processor 的工作线程结束
+ * 
+ * 内部遍历所有 Processor，依次调用其 join() 方法
+ * 会阻塞直到所有工作线程都执行完毕
+ * 
+ * @note 调用此函数前应确保所有 Processor 都已调用 stop()
+ */
 void Scheduler::join()
 {
 	for (auto pP : processors_)
