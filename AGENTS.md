@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-这是一个基于 GNU ucontext API 的用户态协程调度框架（mini coroutine），使用 C++17 开发。项目目标是实现一个高性能的协程调度系统，可作为 RPC 框架的基础组件。
+这是一个基于 GNU ucontext API 的用户态协程调度框架（mini coroutine），使用 C++17 开发。项目实现了一个高性能的 RPC 框架，包含协程调度、网络通信、序列化等完整功能。
 
 ### 核心技术栈
 - **语言标准**: C++17
@@ -12,6 +12,7 @@
 - **协程实现**: GNU ucontext API
 - **事件驱动**: epoll (Linux)
 - **线程支持**: std::thread, std::atomic
+- **序列化**: TinyJson (轻量级 JSON 库)
 
 ## 构建与运行
 
@@ -77,8 +78,18 @@ make && ./bin/processor_smoke_test
 - `TcpServer`: 基于 Reactor 模式的 TCP 服务器，支持单线程和多线程模式
 - `TcpClient`: TCP 客户端封装，提供协程安全的连接、收发接口
 
+### 8. RPC 层 (`include/rpc/`)
+- `RpcServer`: RPC 服务器，基于 TcpServer 封装，支持服务注册与请求路由
+- `RpcClient`: RPC 客户端，提供同步调用接口
+- `RpcHeader`: RPC 协议头部（固定 8 字节），解决 TCP 粘包问题
+- `RpcServerStub`: 服务端存根，负责消息编解码
+- `RpcClientStub`: 客户端存根，负责消息编解码和网络通信
+- `Service`: 服务接口基类，用户需继承实现具体服务
+- `TinyJson`: 轻量级 JSON 序列化库（`include/json.h`）
+
 ## 公共 API
 
+### 协程调度 API
 ```cpp
 namespace minico {
 
@@ -95,6 +106,46 @@ void sche_join();
 }
 ```
 
+### RPC 服务端 API
+```cpp
+class RpcServer {
+public:
+    // 启动 RPC 服务器（单线程模式）
+    void start(std::string_view ip, int port);
+    
+    // 启动 RPC 服务器（多线程模式）
+    void start_multi(std::string_view ip, int port);
+    
+    // 注册服务
+    void add_service(Service *s);
+};
+
+// 服务接口（用户继承实现）
+class Service {
+public:
+    virtual const char *name() const = 0;
+    virtual void process(TinyJson &request, TinyJson &result) = 0;
+};
+```
+
+### RPC 客户端 API
+```cpp
+class RpcClient {
+public:
+    // 连接服务器
+    void connect(const char *ip, int port);
+    
+    // 发起 RPC 调用
+    void call(TinyJson &request, TinyJson &response);
+    
+    // 心跳检测
+    void ping();
+    
+    // 关闭连接
+    int close();
+};
+```
+
 ## 关键设计模式
 
 1. **双缓冲待调度队列**: Processor 中使用两个队列交替，减少生产者写入与消费者读取的锁竞争
@@ -102,6 +153,41 @@ void sche_join();
 3. **线程本地存储**: `thread_local int threadIdx` 用于处理器识别
 4. **RAII 资源管理**: SpinlockGuard、Context 等均采用 RAII 模式
 5. **Reactor 模式**: TcpServer 主协程负责 accept，新连接派发独立协程处理
+6. **存根模式**: RPC 层通过 ServerStub/ClientStub 封装网络通信细节
+7. **服务注册模式**: RpcServer 通过 `add_service()` 动态注册服务，支持多服务路由
+
+## RPC 协议设计
+
+### 消息格式
+```
++----------------+----------------+------------------+
+| info (2 bytes) | magic (2 bytes)| len (4 bytes)    |
++----------------+----------------+------------------+
+|              JSON Payload (len bytes)             |
++---------------------------------------------------+
+```
+
+- `info`: 消息类型/版本信息
+- `magic`: 魔数 (0x7777)，用于校验合法 RPC 消息
+- `len`: JSON 载荷长度（网络字节序）
+
+### 请求格式
+```json
+{
+    "service": "ServiceName",
+    "method": "MethodName",
+    // 其他业务参数...
+}
+```
+
+### 响应格式
+```json
+{
+    "err": 200,
+    "errmsg": "ok",
+    // 其他返回数据...
+}
+```
 
 ## 目录结构
 
@@ -111,6 +197,7 @@ rpc-project/
 │   ├── context.h         # 上下文封装
 │   ├── coroutine.h       # 协程定义
 │   ├── epoller.h         # epoll 封装
+│   ├── json.h            # TinyJson 序列化库
 │   ├── logger.h          # 日志系统
 │   ├── mempool.h         # 内存池
 │   ├── minico_api.h      # 公共 API
@@ -126,6 +213,13 @@ rpc-project/
 │   ├── spinlock_guard.h  # 自旋锁 RAII 包装器
 │   ├── timer.h           # 定时器
 │   ├── utils.h           # 工具宏
+│   ├── rpc/              # RPC 模块
+│   │   ├── rpc_client.h      # RPC 客户端
+│   │   ├── rpc_client_stub.h # RPC 客户端存根
+│   │   ├── rpc_header.h      # RPC 协议头部
+│   │   ├── rpc_server.h      # RPC 服务器
+│   │   ├── rpc_server_stub.h # RPC 服务端存根
+│   │   └── service.h         # 服务接口
 │   └── tcp/              # TCP 网络模块
 │       ├── tcp_client.h  # TCP 客户端
 │       └── tcp_server.h  # TCP 服务端
@@ -142,6 +236,12 @@ rpc-project/
 │   ├── scheduler.cpp
 │   ├── socket.cpp
 │   ├── timer.cpp
+│   ├── rpc/              # RPC 模块实现
+│   │   ├── rpc_client.cpp
+│   │   ├── rpc_client_stub.cpp
+│   │   ├── rpc_header.cpp
+│   │   ├── rpc_server.cpp
+│   │   └── rpc_server_stub.cpp
 │   └── tcp/
 │       ├── tcp_client.cpp
 │       └── tcp_server.cpp
@@ -149,6 +249,8 @@ rpc-project/
 │   ├── processor_smoke_test.cpp  # 核心冒烟测试
 │   ├── tcp_client_test.cpp       # TCP 客户端测试
 │   ├── tcp_server_test.cpp       # TCP 服务端测试
+│   ├── rpc_client.cpp            # RPC 客户端测试
+│   ├── rpc_server.cpp            # RPC 服务端测试
 │   ├── log_test.cpp              # 日志测试
 │   └── timer_epoller_test.cpp    # 定时器测试
 ├── bin/                  # 可执行文件输出
@@ -178,6 +280,8 @@ rpc-project/
 - `examples/processor_smoke_test.cpp`: 验证协程创建、执行、定时器暂停与恢复、处理器事件循环功能
 - `examples/tcp_server_test.cpp`: TCP 服务端功能测试
 - `examples/tcp_client_test.cpp`: TCP 客户端功能测试
+- `examples/rpc_server.cpp`: RPC 服务端功能测试，包含自定义服务实现示例
+- `examples/rpc_client.cpp`: RPC 客户端功能测试，演示服务调用流程
 
 ## 依赖
 
@@ -191,6 +295,7 @@ rpc-project/
 
 1. **新增源文件**: 需要在 `src/CMakeLists.txt` 中添加到 SOURCES 列表
 2. **新增测试文件**: 需要在 `examples/CMakeLists.txt` 中添加对应的 `add_executable` 和 `target_link_libraries`
-3. **TCP 模块**: TCP 相关代码目前需要单独编译链接对应的 .cpp 文件
-4. **协程安全**: 在协程环境中避免使用阻塞式系统调用，应使用框架提供的协程化接口
-5. **跨平台**: 代码依赖 Linux 特有 API，无法在 Windows/macOS 上编译运行
+3. **RPC 模块**: RPC 相关代码已集成到主库 `librpc-project.so`，无需单独编译
+4. **新增 RPC 服务**: 继承 `Service` 类并实现 `name()` 和 `process()` 方法，通过 `RpcServer::add_service()` 注册
+5. **协程安全**: 在协程环境中避免使用阻塞式系统调用，应使用框架提供的协程化接口
+6. **跨平台**: 代码依赖 Linux 特有 API，无法在 Windows/macOS 上编译运行
