@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <cstddef>
 
 /**
  * @brief RPC 协议头部结构 (固定 8 字节)
@@ -29,4 +30,4 @@ struct RpcHeader {
  * @param header 指向头部内存的指针
  * @param msg_len 后续紧跟的 Json 字符串长度
  */
-void set_rpc_header(void *header, int msg_len);
+void set_rpc_header(void *header, size_t msg_len);
