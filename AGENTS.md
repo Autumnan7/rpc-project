@@ -253,6 +253,7 @@ rpc-project/
 │   ├── rpc_server.cpp            # RPC 服务端测试
 │   ├── log_test.cpp              # 日志测试
 │   └── timer_epoller_test.cpp    # 定时器测试
+├── test/                 # 单元测试目录（预留）
 ├── bin/                  # 可执行文件输出
 ├── lib/                  # 库文件输出
 └── build/                # 构建目录
@@ -262,7 +263,7 @@ rpc-project/
 
 | 位置 | 问题描述 | 状态 |
 |------|----------|------|
-| `src/context.cpp:83` | 使用硬编码栈大小 `parameter::coroutineStackSize` 而非构造函数参数 `stackSize_`（有 TODO 注释）| 待修复 |
+| `src/context.cpp:54-55` | 使用硬编码栈大小 `parameter::coroutineStackSize` 而非构造函数参数 `stackSize_`（有 TODO 注释）| 待修复 |
 | `src/mutex.cpp:17` | `rlock()` 递归调用：协程被唤醒后会再次调用 `rlock()` 尝试获取锁 | 设计如此 |
 
 ## 编码规范

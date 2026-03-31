@@ -7,33 +7,40 @@
 #include "../include/rpc/rpc_server.h"
 
 /** 注册的一种Service*/
-class HelloWorld : public Service {
+class HelloWorld : public Service
+{
 public:
     typedef void (HelloWorld::*Func)(TinyJson &request, TinyJson &result);
 
-    HelloWorld() : _name("HelloWorld") {
+    HelloWorld() : _name("HelloWorld")
+    {
         _methods["hello"] = &HelloWorld::hello;
         _methods["world"] = &HelloWorld::world;
     }
 
-    virtual const char *name() const {
+    virtual const char *name() const
+    {
         return _name.c_str();
     }
 
-    virtual ~HelloWorld() {
+    virtual ~HelloWorld()
+    {
     }
 
     /** 实际的服务类的处理函数*/
-    virtual void process(TinyJson &request, TinyJson &result) override {
+    virtual void process(TinyJson &request, TinyJson &result) override
+    {
         std::string method = request.Get<std::string>("method");
         LOG_INFO("the request method is %s", method.c_str());
-        if (method.empty()) {
+        if (method.empty())
+        {
             result["err"].Set(400);
             result["errmsg"].Set("request has no method");
             return;
         }
         auto it = _methods.find(method);
-        if (it == _methods.end()) {
+        if (it == _methods.end())
+        {
             result["err"].Set(404);
             result["errmsg"].Set("method not found");
             return;
@@ -52,29 +59,33 @@ private:
     std::string _name;
 };
 
-class HelloWorldImpl : public HelloWorld {
+class HelloWorldImpl : public HelloWorld
+{
 public:
     HelloWorldImpl() = default;
 
     virtual ~HelloWorldImpl() = default;
 
-    virtual void hello(TinyJson &request, TinyJson &result) {
+    virtual void hello(TinyJson &request, TinyJson &result)
+    {
         result["method"].Set("hello");
         result["err"].Set(200);
-        result["errmsg"].Set("the loop problem is solved");
+        result["errmsg"].Set("Hello, RPC!");
     }
 
-    virtual void world(TinyJson &request, TinyJson &result) {
+    virtual void world(TinyJson &request, TinyJson &result)
+    {
         result["method"].Set("world");
         result["err"].Set(200);
-        result["errmsg"].Set("ok");
+        result["errmsg"].Set("World, RPC!");
     }
 };
 
 /**
  * need server-stub and client-stub
-*/
-int main() {
+ */
+int main()
+{
     LOG_INFO("test: start the server");
     /** test the tcp client and server  result : success*/
     // TcpServer s;
@@ -83,7 +94,7 @@ int main() {
     /** test the rpc client and server*/
     RpcServer rpc_server;
     rpc_server.add_service(new HelloWorldImpl);
-    rpc_server.start_multi(nullptr, 12345);
+    rpc_server.start_multi("0.0.0.0", 12345);
 
     minico::sche_join();
     std::cout << "end" << std::endl;
