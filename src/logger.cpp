@@ -66,7 +66,7 @@ void log_base(const char *file,
     vsnprintf(data + i, MAXLINE - i, fmt, ap);
     va_end(ap);
 
-    int err = dprintf(log_fd, "%s - %s:%d\n",
+    int err = dprintf(log_fd, "%-120s | %s:%d\n",
                       data, strrchr(file, '/') + 1, line);
     if (err == -1)
     {
@@ -95,8 +95,12 @@ void log_sys(const char *file,
     vsnprintf(data + i, MAXLINE - i, fmt, ap);
     va_end(ap);
 
-    dprintf(log_fd, "%s: %s - %s:%d\n",
-            data, strerror(errno), strrchr(file, '/') + 1, line);
+    // 追加系统错误信息
+    int msg_len = strlen(data);
+    snprintf(data + msg_len, MAXLINE - msg_len, ": %s", strerror(errno));
+
+    dprintf(log_fd, "%-120s | %s:%d\n",
+            data, strrchr(file, '/') + 1, line);
 
     if (to_abort)
     {
