@@ -12,19 +12,12 @@ void RpcClientStub::encode(TinyJson &request) {
     /** 打包rpc标识头部和消息主体，发送网络消息*/
     buf.clear();
     buf.resize(sizeof(RpcHeader) + body_len);
- set_rpc_header((void *) &buf[0], body_len);
+    set_rpc_header((void *) &buf[0], body_len);
 
     memcpy(buf.data() + sizeof(RpcHeader), str_json_request.data(), body_len);
 
     m_tcp_client->send((void *) &buf[0], buf.size());
 
-    //for test
-    //std::string rpc_client_send_string(buf.begin(),buf.end());
-    //const char* rpc_client_send = rpc_client_send_string.c_str();
-    //LOG_INFO("the rpc client send request string is %s",rpc_client_send);
-
-    //std::cout << "the rpc client send request string is " 
-    //    << rpc_client_send_string << std::endl;
     return;
 }
 
@@ -46,9 +39,6 @@ void RpcClientStub::decode(TinyJson &result) {
     std::string str_json_result(buf.begin(), buf.end());
     result.ReadJson(str_json_result);
 
-    //for test
-    //LOG_INFO("the rpc client process rpc message is %s",
-    //    str_json_result.c_str());
     return;
 
 }
