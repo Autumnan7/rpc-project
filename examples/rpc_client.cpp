@@ -1,69 +1,81 @@
+/**
+ * @file rpc_client.cpp
+ * @brief RPC 客户端示例 - 演示服务调用与响应处理
+ *
+ * 本示例展示如何使用 RpcClient 调用远程服务：
+ * - 连接 RPC 服务器
+ * - 构造请求并调用服务方法
+ * - 解析响应结果
+ */
+
 #include <iostream>
 #include <string>
-#include <sys/sysinfo.h>
 
-#include "../include/logger.h"
-#include "../include/rpc/rpc_client.h"
+#include "logger.h"
+#include "rpc/rpc_client.h"
 
-void tcp_client_worker(TcpClient& tcp_client)
+/**
+ * @brief RPC 客户端工作协程
+ * @param rpc_client RPC 客户端实例
+ * @param count      调用次数
+ *
+ * 演示完整的服务调用流程：
+ * 1. 建立连接
+ * 2. 心跳检测
+ * 3. 调用 GetStatus 和 GetMetrics 方法
+ */
+void rpc_client_worker(RpcClient &rpc_client, int count)
 {
-    tcp_client.connect("127.0.0.1",12345);
-    char buf[1024];
+    rpc_client.connect("127.0.0.1", 12345);
 
-    LOG_INFO("client send ping");
-    tcp_client.send("ping",4);
-    tcp_client.recv(buf,1024);
-    LOG_INFO("client recv %s",buf);
-    /** 问题初步分析是由于rpc客户端销毁造成一直发送0造成的*/
-}
+    for (int i = 0; i < count; ++i)
+    {
+        LOG_INFO("========== Round %d ==========", i + 1);
 
-void rpc_client_worker(RpcClient& rpc_client,int number)
-{
-        rpc_client.connect("127.0.0.1",12345);
-        for(int i = 0; i < number; ++i)
+        // 心跳检测
+        // rpc_client.ping();
+
+        // 调用 GetStatus 方法
         {
-            LOG_INFO("-------the %d st client test-----------",i);
-            rpc_client.ping();
             TinyJson request;
-            TinyJson result;
-            request["service"].Set<std::string>("HelloWorld");
-            request["method"].Set<std::string>("world");
-            rpc_client.call(request,result);
-            int errcode = result.Get<int>("err");
-            std::string errmsg = result.Get<std::string>("errmsg");
-            LOG_INFO("--------------------------------");
-            LOG_INFO("the result errcode is %d",errcode);
-            LOG_INFO("the result errmsg is %s",errmsg.c_str());
-            LOG_INFO("--------------------------------");
+            TinyJson response;
 
-            TinyJson request_two;
-            TinyJson result_two;
-            request_two["service"].Set<std::string>("HelloWorld");
-            request_two["method"].Set<std::string>("hello");
-            rpc_client.call(request_two,result_two);
-            int errcode_two = result_two.Get<int>("err");
-            std::string errmsg_two = result_two.Get<std::string>("errmsg");
-            LOG_INFO("--------------------------------");
-            LOG_INFO("the result errcode is %d",errcode_two);
-            LOG_INFO("the result errmsg is %s",errmsg_two.c_str());
-            LOG_INFO("--------------------------------");
+            request["service"].Set<std::string>("SystemMonitorService");
+            request["method"].Set<std::string>("GetStatus");
+
+            rpc_client.call(request, response);
+
+            int status = response.Get<int>("status", -1);
+            LOG_INFO("[GetStatus] status: %d", status);
         }
-        
-    
+
+        // 调用 GetMetrics 方法
+        {
+            TinyJson request;
+            TinyJson response;
+
+            request["service"].Set<std::string>("SystemMonitorService");
+            request["method"].Set<std::string>("GetMetrics");
+
+            rpc_client.call(request, response);
+
+            int status = response.Get<int>("status", -1);
+            LOG_INFO("[GetMetrics] status: %d", status);
+        }
+    }
 }
 
 int main()
 {
-    LOG_INFO("test: add one rpc client");
-    //TcpClient tcp_client_test;
-    RpcClient rpc_client_test;
-    int loop_time = 100;
-    //minico::co_go([&tcp_client_test](){
-	//	tcp_client_worker(tcp_client_test);
-	//});
-	minico::co_go([&rpc_client_test,&loop_time](){
-		rpc_client_worker(rpc_client_test,loop_time);
-	});
+    LOG_INFO("[System] Starting RPC Client...");
+
+    RpcClient rpc_client;
+    int call_count = 100;
+
+    minico::co_go([&rpc_client, call_count]()
+                  { rpc_client_worker(rpc_client, call_count); });
+
     minico::sche_join();
+
     return 0;
 }
