@@ -165,6 +165,7 @@ public:
 
 int main()
 {
+    setLogLevel(LOG_LEVEL_FATAL); // 关闭压测过程中的疯狂刷屏日志，极大提升性能
     LOG_INFO("[System] Starting RPC Server Node...");
 
     RpcServer rpc_server;
