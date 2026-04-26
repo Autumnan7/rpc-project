@@ -100,8 +100,8 @@ protected:
     }
 
 private:
-    std::unordered_map<std::string, MethodHandler> handlers_;  ///< 方法名 -> 处理函数映射
-    std::string service_name_;                                  ///< 服务名称
+    std::unordered_map<std::string, MethodHandler> handlers_; ///< 方法名 -> 处理函数映射
+    std::string service_name_;                                ///< 服务名称
 };
 
 /**
@@ -128,7 +128,7 @@ public:
      */
     void OnGetStatus(TinyJson &request, TinyJson &response) override
     {
-        (void)request;  // 未使用参数
+        (void)request; // 未使用参数
 
         response["status"].Set(200);
 
@@ -148,7 +148,7 @@ public:
      */
     void OnGetMetrics(TinyJson &request, TinyJson &response) override
     {
-        (void)request;  // 未使用参数
+        (void)request; // 未使用参数
 
         struct sysinfo info;
         sysinfo(&info);
