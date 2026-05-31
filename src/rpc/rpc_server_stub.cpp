@@ -33,18 +33,16 @@ void RpcServerStub::decode(std::vector<char> &buf, TinyJson &request)
 
 void RpcServerStub::encode(TinyJson &response, std::vector<char> &buf)
 {
-    std::string str_json_response = response.WriteJson();
-    LOG_INFO("server sending JSON: %s", str_json_response.c_str());
-    const size_t body_len = str_json_response.length();
+    std::string json = response.WriteJson();
+    LOG_INFO("server sending JSON: %s", json.c_str());
+    const size_t body_len = json.length();
 
     /** send byte stream*/
     buf.clear();
     buf.resize(sizeof(RpcHeader) + body_len);
 
-    /** 在发送缓冲区中填入rpc头部信息*/
-    // 头部的len代表的就是载荷的长度
-    // buf.data 也是第一个元素地址
+    // 填充头部
     set_rpc_header(static_cast<void *>(buf.data()), body_len);
 
-    std::memcpy(buf.data() + sizeof(RpcHeader), str_json_response.data(), str_json_response.size());
+    std::memcpy(buf.data() + sizeof(RpcHeader), json.data(), json.size());
 }
