@@ -1,43 +1,24 @@
 /**
-
-* @brief 为什么本内存池使用 malloc/free 而不是 new/delete？
-*
-* 本模块属于“底层内存管理组件”，核心职责是管理“原始内存（raw memory）”，
-* 而不是对象的构造与析构。因此选择使用 C 风格的 malloc/free，而非 C++ 的 new/delete。
-*
-* 主要原因如下：
-*
-* 1. 控制粒度更低（核心原因）
-* malloc/free 只负责“分配/释放字节内存”，不会调用构造或析构函数；
-* 而 new/delete 会隐式调用构造/析构函数，不利于实现通用内存池。
-*
-* 2. 避免不必要的开销
-* 内存池通常用于高频小对象分配（如协程、任务等），
-* 如果使用 new/delete，会引入额外的构造/析构开销，影响性能。
-*
-* 3. 支持对象与内存解耦
-* 内存池只提供“内存块”，对象的构造应由上层通过 placement new 完成：
-* ```
-     void* mem = pool.AllocAMemBlock();
-  ```
-* ```
-     Object* obj = new (mem) Object();
-  ```
-*
-* 这样可以实现：
-* * 延迟构造
-* * 自定义生命周期管理
-*
-* 4. 更符合内存池设计模式
-* 主流高性能内存池（如 STL 二级空间配置器、tcmalloc、jemalloc）
-* 均采用 malloc 作为底层分配手段，再进行二次封装。
-*
-* 总结：
-* malloc/free 用于“内存管理”
-* new/delete 用于“对象管理”
-*
-* 本模块属于前者，因此采用 malloc/free。
-  */
+ * @file mempool.h
+ * @brief 高性能固定大小内存池 (Fixed-Size Memory Pool)
+ *
+ * 本模块是 RPC 协程框架的内存基础设施，专为海量并发下高频的小对象（如 Coroutine, Context 等）分配场景设计。
+ * 在 C10K+ 极限重压下，频繁调用原生 malloc/free 会引发“系统调用风暴”和“严重的内存碎片”，拖垮性能。
+ * 本内存池通过“批量申请、按需分配、内嵌空闲链表”机制，提供了极致的 O(1) 原生内存分配/回收能力。
+ *
+ * 【核心架构机制】
+ * 1. 零负载侵入式链表 (Embedded FreeList)
+ *    利用 union 的内存共用特性，把 free_list 的 next 指针直接写在空闲的内存块中。
+ *    这就意味着：管理 10 万个空闲内存块，不需要额外浪费哪怕 1 byte 的空间存储指针！
+ *
+ * 2. 内存分配与对象生命周期严格解耦
+ *    坚持使用底层 C 语言的 malloc/free 提供 Raw Memory（纯粹字节流），绕过 new/delete 带来
+ *    的不可控的构造/析构开销。将面向对象初始化的权力上抛给更高层的 ObjPool (基于 placement new)。
+ *
+ * 3. 连续内存预分配 (Chunk Allocation)
+ *    拒绝零碎申请，每次枯竭时向 OS 申请一大块连续内存 (Chunk) 进行切分。
+ *    这既极大降低了缺页中断 (Page Fault) 的频率，又利用了 CPU 缓存行 (Cache Line) 的空间局部性。
+ */
 
 #pragma once
 
@@ -75,9 +56,6 @@ namespace minico
      * 2. 如果空闲链表为空，则一次性向系统申请一批块
      * 3. 申请到的大块内存会被切分成多个固定块，并挂到空闲链表
      *
-     * 适用场景：
-     * - 频繁创建/销毁固定大小对象
-     * - 如 Coroutine、Task、Node 等
      */
     template <std::size_t objSize>
     class MemPool
@@ -154,7 +132,7 @@ namespace minico
             {
                 LOG_ERROR("MemPool malloc failed");
                 return nullptr;
-            }
+                        }
 
             // 把这次申请的大块内存挂到“大块链表”的头部
             // malloc会返回 一个void指针，这里显示转换为MemBlockNode指针，方便后续链表操作

@@ -44,7 +44,8 @@ Scheduler *Scheduler::getScheduler()
 		{
 			pScher_ = new Scheduler();
 			// 根据实际CPU核心数开启对应数量的线程
-			pScher_->startScheduler(::get_nprocs_conf()); // get_nprocs_conf() 获取系统配置的CPU核心数，适用于Linux系统。
+			// get_nprocs_conf() 获取系统配置的CPU核心数，适用于Linux系统。
+			pScher_->startScheduler(::get_nprocs_conf());
 		}
 	}
 	return pScher_;
@@ -63,10 +64,10 @@ void Scheduler::createNewCo(std::function<void()> &func, size_t stackSize)
 
 /**
  * @brief 等待所有 Processor 的工作线程结束
- * 
+ *
  * 内部遍历所有 Processor，依次调用其 join() 方法
  * 会阻塞直到所有工作线程都执行完毕
- * 
+ *
  * @note 调用此函数前应确保所有 Processor 都已调用 stop()
  */
 void Scheduler::join()
