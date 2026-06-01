@@ -118,6 +118,9 @@ namespace minico
         /** 等待 fd 上发生 ev 事件 */
         void waitEvent(int fd, int ev);
 
+        /** 永久注册 fd 到 epoll，不 yield，不自动移除 */
+        bool addPermanentEvent(int fd, int ev);
+
         // =========================
         // 主循环与线程控制
         // =========================

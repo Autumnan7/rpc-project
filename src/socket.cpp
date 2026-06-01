@@ -119,22 +119,43 @@ Socket Socket::accept_raw()
 	struct sockaddr_in client;
 	socklen_t len = sizeof(client);
 
-	// 系统调用 accept，获取客户端连接
-	connfd = ::accept(_sockfd, (struct sockaddr *)&client, &len);
-
-	if (connfd < 0)
+	while (true)
 	{
-		// 连接失败，返回无效 Socket
-		return Socket(connfd);
+		connfd = ::accept(_sockfd, (struct sockaddr *)&client, &len);
+
+		if (connfd >= 0)
+		{
+			// 连接成功，解析客户端 IP 和端口
+			int port = ntohs(client.sin_port);
+			char ip[INET_ADDRSTRLEN];
+			inet_ntop(AF_INET, &client.sin_addr, ip, sizeof(ip));
+			return Socket(connfd, std::string(ip), port);
+		}
+
+		// connfd < 0，非阻塞 listen fd 常见 errno 分析：
+		if (errno == EAGAIN || errno == EWOULDBLOCK)
+		{
+			// 没有待处理连接，正常返回无效 Socket（调用方应 yield 等待 epoll 唤醒）
+			return Socket(-1);
+		}
+
+		if (errno == EINTR)
+		{
+			// 被信号中断，重试
+			continue;
+		}
+
+		if (errno == EMFILE || errno == ENFILE)
+		{
+			// fd 耗尽，无法接受新连接，必须告警
+			LOG_ERROR("accept failed: fd limit reached (errno=%d). Consider raising ulimit.", errno);
+			return Socket(-1);
+		}
+
+		// 其他错误（ECONNABORTED 等），直接返回无效 Socket
+		LOG_ERROR("accept failed: errno=%d", errno);
+		return Socket(-1);
 	}
-
-	// 解析客户端 IP 和端口
-	int port = ntohs(client.sin_port); // 网络序转主机序
-
-	char ip[INET_ADDRSTRLEN];
-	inet_ntop(AF_INET, &client.sin_addr, ip, sizeof(ip)); // 二进制 IP 转字符串
-
-	return Socket(connfd, std::string(ip), port);
 }
 
 /** 协程版 accept：封装了异步等待逻辑 */

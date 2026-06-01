@@ -176,8 +176,9 @@ void TcpServer::start_multi(std::string_view ip, int port, bool bind_thread)
 }
 
 /**
- * @brief 单核模式下的主循环
+ * @brief 单核模式下的主循环（永久注册 listen fd 到 epoll）
  * @note 负责不断 accept 新连接，并为每个新连接派发独立的业务处理协程
+ *       采用 batch yield 策略：每连续 accept 16 个连接后主动让出 CPU，防止 accept 协程饿死业务协程
  */
 void TcpServer::server_loop()
 {
@@ -185,17 +186,26 @@ void TcpServer::server_loop()
     LOG_INFO("start run the server loop");
     LOG_INFO("-------------------------");
 
+    // 永久注册 listen fd 到当前 Processor 的 epoll，后续不再移除
+    if (!minico::Scheduler::getScheduler()->getProcessor(threadIdx)->addPermanentEvent(_listen_fd->fd(), EPOLLIN | EPOLLPRI | EPOLLRDHUP | EPOLLHUP | EPOLLERR))
+    {
+        LOG_ERROR("addPermanentEvent failed for listen fd %d", _listen_fd->fd());
+        return;
+    }
+
+    constexpr int kAcceptBatchSize = 16; // 每轮最多连续 accept 的连接数，超过后主动 yield
+    int batch_count = 0;
+
     while (true)
     {
-        LOG_INFO("block in server_loop,has no new client accept");
+        // 榨干当前所有待处理连接（LT 模式下 epoll 会反复触发，需 accept 到 EAGAIN 再 yield）
+        minico::Socket conn(_listen_fd->accept_raw());
 
-        // accept 返回一个封装好的 Socket 对象（内部持有 conn_fd）
-        minico::Socket conn(_listen_fd->accept());
-
-        // 检查 accept 返回的对象是否合法（防止返回无效 fd 包装出的空壳对象）
         if (!conn.isUseful())
         {
-            LOG_ERROR("accept error, get an invalid socket");
+            // 无待处理连接（EAGAIN），yield 挂起协程，交由 epoll 在新连接到达时唤醒
+            minico::Scheduler::getScheduler()->getProcessor(threadIdx)->yield();
+            batch_count = 0;
             continue;
         }
 
@@ -208,6 +218,14 @@ void TcpServer::server_loop()
         // server_loop 循环末尾栈上的 conn 析构，_refCount 变 1；新协程持有 _refCount 为 1 的 conn
         minico::co_go([this, conn]() mutable
                       { this->_on_server_connection(std::move(conn)); });
+
+        // batch yield：每连续 accept kAcceptBatchSize 个连接后主动让出 CPU
+        // 防止 accept 协程在高负载下霸占 Processor，饿死已创建的业务协程
+        if (++batch_count >= kAcceptBatchSize)
+        {
+            minico::Scheduler::getScheduler()->getProcessor(threadIdx)->yield();
+            batch_count = 0;
+        }
     }
 }
 
@@ -218,21 +236,33 @@ void TcpServer::multi_server_loop(int thread_number, bool bind_thread)
 {
     LOG_INFO("multi server loop running on core %2d, bind_thread=%s", thread_number, bind_thread ? "true" : "false");
 
+    // 永久注册模式：启动时注册一次 listen fd，后续不再 remove/add
+    if (!minico::Scheduler::getScheduler()->getProcessor(thread_number)->addPermanentEvent(_multi_listen_fd[thread_number].fd(), EPOLLIN | EPOLLPRI | EPOLLRDHUP | EPOLLHUP | EPOLLERR))
+    {
+        LOG_ERROR("addPermanentEvent failed for listen fd %d on core %2d", _multi_listen_fd[thread_number].fd(), thread_number);
+        return;
+    }
+
+    constexpr int kAcceptBatchSize = 16; // 永久注册模式下，每轮最多连续 accept 的连接数
+    int batch_count = 0;
+
     while (true)
     {
-        // 基于 SO_REUSEPORT，每个核独立 accept，由内核做负载均衡
-        minico::Socket conn(_multi_listen_fd[thread_number].accept());
+        // 直接调用 accept_raw()（非阻塞，无 epoll_ctl 开销）
+        minico::Socket conn(_multi_listen_fd[thread_number].accept_raw());
 
         if (!conn.isUseful())
         {
-            LOG_ERROR("multi server loop accept error on core %2d", thread_number);
+            // 无待处理连接（EAGAIN），yield 挂起等待 epoll 唤醒
+            minico::Scheduler::getScheduler()->getProcessor(thread_number)->yield();
+            batch_count = 0;
             continue;
         }
 
         LOG_INFO("core %2d accept client, fd=%d", thread_number, conn.fd());
         conn.setTcpNoDelay(true);
 
-        // std::move(conn) 只是把 Lambda 捕获的那个副本”推”进回调函数
+        // std::move(conn) 只是把 Lambda 捕获的那个副本"推"进回调函数
         // 不会增加计数，也不会提前析构，性能更优
         // bind_thread=true：绑定到 accept 所在核，保住 L1/L2 缓存
         // bind_thread=false：走全局负载均衡（MIN_EVENT_FIRST），让调度器选最空闲的核
@@ -246,6 +276,13 @@ void TcpServer::multi_server_loop(int thread_number, bool bind_thread)
         {
             minico::co_go([this, conn]() mutable
                           { this->_on_server_connection(std::move(conn)); });
+        }
+
+        // batch yield 防止 accept 协程饿死业务协程
+        if (++batch_count >= kAcceptBatchSize)
+        {
+            minico::Scheduler::getScheduler()->getProcessor(thread_number)->yield();
+            batch_count = 0;
         }
     }
 }

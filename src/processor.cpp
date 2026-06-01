@@ -218,6 +218,13 @@ void Processor::waitEvent(int fd, int ev)
     eventPoller_.removeEvent(currentCoroutine_, fd, ev);
 }
 
+// 永久注册 fd 到 epoll，不 yield，不自动移除
+// 适用于 listen fd 等需要长期监听的事件
+bool Processor::addPermanentEvent(int fd, int ev)
+{
+    return eventPoller_.addEvent(currentCoroutine_, fd, ev);
+}
+
 void Processor::stop()
 {
     state_ = ProcessorStatus::Stopping;

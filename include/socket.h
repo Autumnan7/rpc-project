@@ -110,6 +110,9 @@ namespace minico
 		/** 接收一个连接，并返回一个新的 Socket 对象 */
 		Socket accept();
 
+		/** 接收一个连接（仅调用系统 accept，不包含协程挂起逻辑） */
+		Socket accept_raw();
+
 		/** 连接到指定 ip 和 port */
 		void connect(const char *ip, int port);
 
@@ -166,9 +169,6 @@ namespace minico
 		int setBlockSocket();
 
 	private:
-		/** 接收一个连接，并返回一个新的Socket连接的具体实现*/
-		Socket accept_raw();
-
 		/** 系统套接字*/
 		int _sockfd;
 
