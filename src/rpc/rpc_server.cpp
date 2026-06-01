@@ -9,12 +9,12 @@ void RpcServer::start(std::string_view ip, int port)
     m_rpc_server_stub->start(ip, port);
 }
 
-void RpcServer::start_multi(std::string_view ip, int port)
+void RpcServer::start_multi(std::string_view ip, int port, bool bind_thread)
 {
     m_rpc_server_stub->register_connection([this](minico::Socket conn)
                                            { this->on_connection(conn); });
     LOG_INFO("register the rpc-server-stub connection callback");
-    m_rpc_server_stub->start_multi(ip, port);
+    m_rpc_server_stub->start_multi(ip, port, bind_thread);
 }
 
 void RpcServer::on_connection(minico::Socket conn)

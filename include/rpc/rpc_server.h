@@ -34,7 +34,7 @@ public:
     // 启动RPC服务器
     void start(std::string_view ip, int port);
 
-    void start_multi(std::string_view ip, int port);
+    void start_multi(std::string_view ip, int port, bool bind_thread = true);
 
     // 注册服务
     void add_service(Service *s)

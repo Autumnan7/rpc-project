@@ -122,7 +122,7 @@ void TcpServer::start(std::string_view ip, int port)
  * @brief 启动多核模式服务器
  * @note 基于 SO_REUSEPORT 特性，每个 CPU 核心创建一个独立的监听 Socket 和 accept 协程，由内核层面实现负载均衡，避免全局锁竞争
  */
-void TcpServer::start_multi(std::string_view ip, int port)
+void TcpServer::start_multi(std::string_view ip, int port, bool bind_thread)
 {
     // 获取当前系统的 CPU 核心数
     auto tCnt = ::get_nprocs_conf();
@@ -169,8 +169,8 @@ void TcpServer::start_multi(std::string_view ip, int port)
 
         // 使用 Lambda 替代 std::bind，避免 std::function 隐式转换带来的额外堆内存开销
         // 捕获当前核心号 i，开启协程并绑定到指定的 CPU 核心上运行
-        minico::co_go([this, i]()
-                      { this->multi_server_loop(i); },
+        minico::co_go([this, i, bind_thread]()
+                      { this->multi_server_loop(i, bind_thread); },
                       minico::parameter::coroutineStackSize, i);
     }
 }
@@ -214,9 +214,9 @@ void TcpServer::server_loop()
 /**
  *@brief 服务器多核工作函数（绑定在指定 CPU 核心上运行）
  */
-void TcpServer::multi_server_loop(int thread_number)
+void TcpServer::multi_server_loop(int thread_number, bool bind_thread)
 {
-    LOG_INFO("multi server loop running on core %2d", thread_number);
+    LOG_INFO("multi server loop running on core %2d, bind_thread=%s", thread_number, bind_thread ? "true" : "false");
 
     while (true)
     {
@@ -232,9 +232,20 @@ void TcpServer::multi_server_loop(int thread_number)
         LOG_INFO("core %2d accept client, fd=%d", thread_number, conn.fd());
         conn.setTcpNoDelay(true);
 
-        // std::move(conn) 只是把 Lambda 捕获的那个副本“推”进回调函数
+        // std::move(conn) 只是把 Lambda 捕获的那个副本”推”进回调函数
         // 不会增加计数，也不会提前析构，性能更优
-        minico::co_go([this, conn]() mutable
-                      { this->_on_server_connection(std::move(conn)); });
+        // bind_thread=true：绑定到 accept 所在核，保住 L1/L2 缓存
+        // bind_thread=false：走全局负载均衡（MIN_EVENT_FIRST），让调度器选最空闲的核
+        if (bind_thread)
+        {
+            minico::co_go([this, conn]() mutable
+                          { this->_on_server_connection(std::move(conn)); },
+                          minico::parameter::coroutineStackSize, thread_number);
+        }
+        else
+        {
+            minico::co_go([this, conn]() mutable
+                          { this->_on_server_connection(std::move(conn)); });
+        }
     }
 }

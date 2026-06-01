@@ -10,9 +10,9 @@ void RpcServerStub::start(std::string_view ip, int port)
     LOG_INFO("rpc-server-stub start run the tcp-server loop");
 }
 
-void RpcServerStub::start_multi(std::string_view ip, int port)
+void RpcServerStub::start_multi(std::string_view ip, int port, bool bind_thread)
 {
-    m_tcp_server->start_multi(ip, port);
+    m_tcp_server->start_multi(ip, port, bind_thread);
     LOG_INFO("rpc-server-stub start run the tcp-server multi loop");
 }
 

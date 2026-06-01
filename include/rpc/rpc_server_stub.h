@@ -32,10 +32,11 @@ public:
 
     /**
      * @brief 启动 RPC 服务端（多线程/多 Reactor 模式）
-     * @param ip   监听的 IP 地址
-     * @param port 监听的端口号
+     * @param ip          监听的 IP 地址
+     * @param port        监听的端口号
+     * @param bind_thread 是否将业务协程绑定到 accept 所在核心
      */
-    void start_multi(std::string_view ip, int port);
+    void start_multi(std::string_view ip, int port, bool bind_thread = true);
 
     /**
      * @brief 注册新连接建立后的回调函数

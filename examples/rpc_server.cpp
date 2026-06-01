@@ -163,20 +163,33 @@ public:
     }
 };
 
-int main()
+int main(int argc, char *argv[])
 {
-    LOG_INFO("[System] Starting RPC Server Node...");
-    setLogLevel(LOG_LEVEL_FATAL); // 关闭压测过程中的疯狂刷屏日志，极大提升性能
+    bool bind_thread = true; // 默认绑定到 accept 所在核
+
+    for (int i = 1; i < argc; ++i)
+    {
+        std::string arg = argv[i];
+        if (arg == "--no-bind" || arg == "-n")
+        {
+            bind_thread = false;
+            std::cout << "[Mode] No-bind (global load balancing)" << std::endl;
+        }
+        else if (arg == "-h" || arg == "--help")
+        {
+            std::cout << "Usage: " << argv[0] << " [options]\n"
+                      << "  -n, --no-bind  Use global load balancing (default: bind to accept core)\n"
+                      << "  -h, --help     Show this help\n";
+            return 0;
+        }
+    }
+
+    LOG_INFO("[System] Starting RPC Server Node (bind_thread=%s)...", bind_thread ? "true" : "false");
+    setLogLevel(LOG_LEVEL_FATAL);
 
     RpcServer rpc_server;
-
-    // 注册业务服务
     rpc_server.add_service(new SystemMonitor());
-
-    // 启动多线程 RPC 服务器
-    rpc_server.start_multi("0.0.0.0", 12345);
-
-    // 等待调度器停止
+    rpc_server.start_multi("0.0.0.0", 12345, bind_thread);
     minico::sche_join();
 
     return 0;

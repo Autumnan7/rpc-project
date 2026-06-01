@@ -32,10 +32,11 @@ public:
 
     /**
      * @brief 启动多线程模式服务器 (基于 SO_REUSEPORT)
-     * @param ip   监听的 IP 地址
-     * @param port 监听的端口号
+     * @param ip          监听的 IP 地址
+     * @param port        监听的端口号
+     * @param bind_thread 是否将业务协程绑定到 accept 所在核心（true=绑定，false=走全局负载均衡）
      */
-    void start_multi(std::string_view ip, int port);
+    void start_multi(std::string_view ip, int port, bool bind_thread = true);
 
     /**
      * @brief 注册连接到达后的业务处理回调
@@ -48,7 +49,7 @@ private:
     void server_loop();
 
     /** @brief 多核主循环：指定线程号的主循环 */
-    void multi_server_loop(int thread_number);
+    void multi_server_loop(int thread_number, bool bind_thread);
 
     /** @brief 用户注册的业务回调函数 */
     conn_callback _on_server_connection;
