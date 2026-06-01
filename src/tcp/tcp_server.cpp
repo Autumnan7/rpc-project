@@ -143,7 +143,7 @@ void TcpServer::start_multi(std::string_view ip, int port)
     // 每个核心对应一个独立的监听和运行循环
     for (int i = 0; i < tCnt; ++i)
     {
-        // 使用 push_back 创建独立的 Socket 对象，确保每个核心有独立的 fd
+        // 使用 emplace_back 直接在预留内存上原地构造 Socket 对象，确保每个底层线程有独立的 fd
         _multi_listen_fd.emplace_back();
 
         if (!_multi_listen_fd[i].isUseful())
@@ -232,10 +232,9 @@ void TcpServer::multi_server_loop(int thread_number)
         LOG_INFO("core %2d accept client, fd=%d", thread_number, conn.fd());
         conn.setTcpNoDelay(true);
 
+        // std::move(conn) 只是把 Lambda 捕获的那个副本“推”进回调函数
+        // 不会增加计数，也不会提前析构，性能更优
         minico::co_go([this, conn]() mutable
-                      {
-            // std::move(conn) 只是把 Lambda 捕获的那个副本“推”进回调函数
-            // 不会增加计数，也不会提前析构，性能更优
-            this->_on_server_connection(std::move(conn)); });
+                      { this->_on_server_connection(std::move(conn)); });
     }
 }
