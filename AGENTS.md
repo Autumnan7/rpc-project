@@ -247,18 +247,29 @@ rpc-project/
 │   └── tcp/
 │       ├── tcp_client.cpp
 │       └── tcp_server.cpp
-├── examples/             # 测试用例
-│   ├── processor_smoke_test.cpp  # 核心冒烟测试
-│   ├── tcp_client_test.cpp       # TCP 客户端测试
-│   ├── tcp_server_test.cpp       # TCP 服务端测试
-│   ├── rpc_client.cpp            # RPC 客户端测试
-│   ├── rpc_server.cpp            # RPC 服务端测试
-│   ├── log_test.cpp              # 日志测试
-│   └── timer_epoller_test.cpp    # 定时器测试
-├── test/                 # 单元测试目录（预留）
-├── bin/                  # 可执行文件输出
-├── lib/                  # 库文件输出
-└── build/                # 构建目录
+├── tests/                # 单元测试（通过 CMake 编译）
+│   ├── CMakeLists.txt
+│   ├── log_test.cpp
+│   ├── processor_smoke_test.cpp
+│   ├── tcp_client_test.cpp
+│   ├── tcp_server_test.cpp
+│   └── timer_epoller_test.cpp
+├── scripts/              # 性能分析工具（无需编译）
+│   ├── README.md
+│   ├── generate-flamegraph.sh
+│   ├── perf-stat.sh
+│   ├── perf-top.sh
+│   ├── perf-report.sh
+│   ├── perf-diff.sh
+│   ├── flamegraph/       # 火焰图工具 (brendangregg/FlameGraph)
+│   └── output/           # 测试结果 (gitignore 忽略)
+├── examples/             # 示例程序
+│   ├── rpc_client.cpp
+│   ├── rpc_server.cpp
+│   └── rpc_benchmark.cpp
+├── bin/                  # 可执行文件输出 (gitignore 忽略)
+├── lib/                  # 库文件输出 (gitignore 忽略)
+└── build/                # 构建目录 (gitignore 忽略)
 ```
 
 ## 已知问题
@@ -278,7 +289,26 @@ rpc-project/
 
 ## 测试
 
-测试文件位于 `examples/` 目录，运行命令参见"构建与运行"章节。
+### 单元测试
+
+测试文件位于 `tests/` 目录，通过 CMake 编译：
+
+```bash
+cd build && make
+./bin/log_test
+./bin/processor_smoke_test
+./bin/tcp_server_test
+./bin/tcp_client_test
+./bin/timer_epoller_test
+```
+
+### 性能测试
+
+性能分析工具位于 `scripts/` 目录，详见 `scripts/README.md`。
+
+### 示例程序
+
+示例程序位于 `examples/` 目录，包括 RPC 客户端/服务端和基准测试工具。
 
 ## 性能测试报告 (Benchmark Report)
 
@@ -396,7 +426,7 @@ rpc-project/
 
 ### 3. 极限高并发压测 (C10K 承载力验证 - 永久注册模式)
 
-本测试专为验证框架系统在**海量高频并发（C10K 问题）**下的极限吞吐、抗压能力与内存管理稳定性。
+本测试专为验证框架系统在**海量高频并发（C10K 问题**下的极限吞吐、抗压能力与内存管理稳定性。
 
 - **测试工具**: 最新版 `rpc_benchmark` (基于全异步协程 + 线程本地无锁统计架构)
 - **测试条件**:

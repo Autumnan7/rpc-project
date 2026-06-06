@@ -123,6 +123,7 @@ void Processor::goCoBatch(const std::vector<Coroutine *> &cos)
 bool Processor::loop()
 {
 
+    // 初始化定时器，绑定到该调度器的epoll实例
     if (!timer_.init(&eventPoller_))
     {
         return false;
@@ -134,7 +135,8 @@ bool Processor::loop()
             threadIdx = threadId_;
             state_ = ProcessorStatus::Running;
             while (state_== ProcessorStatus::Running)
-            {
+            {   
+                // 清空临时队列
                 if (!readyCoroutines_.empty())
                 {
                     readyCoroutines_.clear();
@@ -233,10 +235,10 @@ void Processor::stop()
 
 /**
  * @brief 等待工作线程结束
- * 
+ *
  * 封装 std::thread::join()，阻塞当前线程直到工作线程执行完毕
  * 工作线程在 while 循环检测到 state_ != Running 时会退出事件循环，线程结束
- * 
+ *
  * @note 调用此函数前应先调用 stop() 设置停止标志
  */
 void Processor::join()

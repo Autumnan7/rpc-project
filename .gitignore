@@ -1,5 +1,23 @@
+# 构建输出
 /build
 /bin
+/lib
 *.so
+*.a
+*.o
+
+# IDE
 .vscode
+.idea
+*.swp
+*.swo
+*~
+
+# CI/CD
 .github
+
+# 性能测试数据（大文件）
+scripts/output/*.perf
+scripts/output/*.script
+scripts/output/*.svg
+scripts/output/*.folded

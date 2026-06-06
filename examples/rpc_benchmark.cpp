@@ -31,8 +31,8 @@ namespace
 
 struct BenchConfig
 {
-    int clients = 1000;
-    int duration_sec = 10;
+    int clients = 10000;       // C10K 默认配置
+    int duration_sec = 10;     // 10 秒满载压测
     std::string ip = "127.0.0.1";
     int port = 12345;
     std::string service = "SystemMonitorService";
@@ -53,7 +53,7 @@ void print_help(const char *bin)
 {
     std::cout << "Usage: " << bin << " [options] [target]\n"
               << "Options:\n"
-              << "  -c <clients>   并发协程/连接数 (default: 1000)\n"
+              << "  -c <clients>   并发协程/连接数 (default: 10000)\n"
               << "  -t <seconds>   压测持续时间 (default: 10)\n"
               << "  -p <port>      服务端端口 (default: 12345)\n"
               << "  -s <service>   RPC 服务名 (default: SystemMonitorService)\n"
